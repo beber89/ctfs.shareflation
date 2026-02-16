@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
+import {console} from "forge-std/Test.sol";
+
 contract ShareToken {
     string public name;
     string public symbol;
@@ -72,11 +74,12 @@ contract ShareVault {
 }
 
 contract Shareflation {
-    uint256 public totalETH;
-    uint256 constant TOKEN_PER_ETH = 2_000_000; // Decimal = 6
+    uint256 public totalAsset;
+    uint256 public constant TOKEN_PER_ETH = 2_000_000; // Decimal = 6
     uint256 private vaultNonce;
     address public immutable owner;
     ShareToken public immutable token;
+    uint256 private constant SHARES_SCALE = 1e6;
     uint256 private constant ETH_SCALE = 1e18;
     uint256 public ownerShares;
 
@@ -90,18 +93,19 @@ contract Shareflation {
         require(msg.value > 0, "NO_ETH_SENT");
         bytes32 salt = keccak256(abi.encodePacked(msg.sender, vaultNonce));
         vaultNonce += 1;
-        ShareVault vault = new ShareVault{salt: salt, value: msg.value}(owner);
+        ShareVault vault = new ShareVault{value: msg.value}(owner);
+        console.log(address(vault));
 
         // Get balance of new address and add it to total balances of ETH
         address vaultAddress = address(vault);
         uint256 vaultBalance = vaultAddress.balance;
-        uint256 updatedTotal = totalETH + vaultBalance;
+        uint256 updatedTotal = totalAsset + vaultBalance;
         require(updatedTotal > 0, "INVALID_TOTAL");
 
         // Calculate shares
-        uint256 shares = (msg.value * ETH_SCALE) / updatedTotal;
+        uint256 shares = (msg.value * SHARES_SCALE) / updatedTotal;
         require(shares > 0, "ZERO_SHARES");
-        totalETH = updatedTotal;
+        totalAsset = updatedTotal;
 
         // Give shares to owner and mint tokens to sender
         ownerShares += shares;
@@ -110,9 +114,10 @@ contract Shareflation {
         token.mint(msg.sender, tokenAmount);
     }
 
-    function ctf() public view {
+    function isCompleted() public view returns (bool) {
         // Invariant  token_supply = TOKEN_PER_ETH * updatedTot
         uint256 tokenSupply = token.totalSupply();
-        require(tokenSupply > totalETH * TOKEN_PER_ETH / ETH_SCALE);
+        // In this case: Owner has minted more tokens than underlying assets
+        return tokenSupply * SHARES_SCALE > ownerShares * TOKEN_PER_ETH;
     }
 }
